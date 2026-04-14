@@ -97,6 +97,7 @@ let botState = {
 };
 let botTabId = null;
 let navMode  = 'tab'; // 'tab' | 'same' — preferência do usuário
+let lastCaptchaSolverStep = 0;
 
 // ─── Helpers ──────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -159,6 +160,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
   }
   if (msg.type === "STOP_BOT")   { botState.parar = true; addLog("Parada solicitada...", "warn"); sendResponse({ ok: true }); }
+  if (msg.type === "CAPTCHA_SOLVER_STEP") {
+    const step = Number(msg?.detail?.count || 0);
+    if (step > lastCaptchaSolverStep) {
+      lastCaptchaSolverStep = step;
+      addLog(`🧩 Solver captcha em execução (passo ${step}).`, "info");
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "RESET")      { resetState(); sendResponse({ ok: true }); }
   if (msg.type === "RELOAD_FAUCETS") {
     // Recarregar lista customizada de faucets do storage
@@ -185,6 +194,7 @@ function resetState() {
   botState.faucets = FAUCETS.map(f => ({ ...f, status: "pending", coletas: 0, mensagem: "" }));
   botState.log = []; botState.parar = false; botState.rodando = false;
   botState.tempoInicio = null; botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   broadcastState();
 }
 
@@ -324,6 +334,9 @@ async function aguardarCaptcha(tabId, logPrefix) {
 
     if (estado === "captcha_open") {
       captchaWasOpen = true;
+      if (lastCaptchaSolverStep === 0 && elapsed >= 30) {
+        addLog(`${logPrefix}[${elapsed}s] Solver sem atividade detectada. Verifique se a extensão de captcha foi recarregada.`, "warn");
+      }
       addLog(`${logPrefix}[${elapsed}s] reCAPTCHA aberto — aguardando o usuário resolver...`, "warn");
       continue;
     }
@@ -664,6 +677,7 @@ async function startBot(email) {
   // Marcar como "validando" antes de qualquer coisa
   botState.rodando = true; botState.parar = false;
   botState.tempoInicio = Date.now(); botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   botState.log = [];
   broadcastState();
 
