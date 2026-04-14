@@ -9,8 +9,11 @@ importScripts(chrome.runtime.getURL('iacaptchar/background_sqlite.js'));
             })
         }
         let o = chrome.runtime.getManifest().content_scripts.filter(n => n.js.includes("eventhook.js")).map(n => n.matches);
-        t().then(n => {
-            n.includes(e) || chrome.scripting.registerContentScripts([{
+        t().then(async () => {
+            try {
+                await chrome.scripting.unregisterContentScripts({ ids: [e] });
+            } catch {}
+            await chrome.scripting.registerContentScripts([{
                 id: e,
                 matches: o.flat(),
                 js: ["iacaptchar/eventhook/loader.js"],
