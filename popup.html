@@ -80,6 +80,12 @@ body{
 }
 .btn-action-cfg:hover{background:#FFF3C0;border-color:#C89500}
 
+/* Captcha — verde */
+.btn-action-captcha{
+  background:#ecfdf5;border-color:#86efac;color:#166534;
+}
+.btn-action-captcha:hover{background:#dcfce7;border-color:#4ade80}
+
 /* ── EMAIL ── */
 .email-section{padding:9px 14px;background:#fff;border-bottom:1px solid #e2e8f0}
 .email-label{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;font-weight:700}
@@ -204,6 +210,9 @@ tbody td{padding:5px 8px;font-size:11px}
   <button class="btn-action btn-action-cfg" id="btnOpts">
     <span>⚙</span> Configurações
   </button>
+  <button class="btn-action btn-action-captcha" id="btnCaptcha">
+    <span>🧩</span> Painel Captcha
+  </button>
 </div>
 
 <!-- BOTÃO EXTENSÃO OBRIGATÓRIA -->
@@ -221,8 +230,8 @@ tbody td{padding:5px 8px;font-size:11px}
 
 <!-- EMAIL -->
 <div class="email-section">
-  <div class="email-label">E-mail da conta</div>
-  <input type="email" class="email-input" id="emailInput" placeholder="seu@email.com">
+  <div class="email-label">E-mail da conta (FaucetPay)</div>
+  <input type="text" class="email-input" id="emailInput" placeholder="conta1@email.com; conta2@email.com">
 </div>
 
 <!-- MODO DE NAVEGAÇÃO -->

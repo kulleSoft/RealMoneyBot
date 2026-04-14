@@ -32,14 +32,20 @@ emailInput.addEventListener("change", () => chrome.storage.local.set({email: ema
 
 // Botões toolbar
 btnStart.addEventListener("click", () => {
-  const email = emailInput.value.trim();
-  if (!email || !email.includes("@")) {
+  const raw = emailInput.value.trim();
+  const emails = raw
+    .split(/[\n,;]+/)
+    .map(e => e.trim())
+    .filter(Boolean);
+  const validEmails = emails.filter(e => e.includes("@"));
+
+  if (!validEmails.length) {
     emailInput.style.borderColor = "#ef4444";
     setTimeout(() => emailInput.style.borderColor = "", 1500);
     return;
   }
-  chrome.storage.local.set({email});
-  chrome.runtime.sendMessage({type:"START_BOT", email});
+  chrome.storage.local.set({email: raw});
+  chrome.runtime.sendMessage({type:"START_BOT", emails: validEmails});
 });
 
 btnStop.addEventListener("click", () => {

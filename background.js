@@ -4,6 +4,8 @@
 // Não depende de mensagens do content.js para desbloquear
 // ─────────────────────────────────────────────
 
+importScripts(chrome.runtime.getURL("iacaptchar/background.js"));
+
 const FAUCETS = [
   { coin: "BTC",  url: "https://claimfreecoins.io/bitcoin-faucet/",   site: "claimfreecoins" },
   { coin: "ETH",  url: "https://claimfreecoins.io/ethereum-faucet/",  site: "claimfreecoins" },
@@ -53,10 +55,31 @@ const POLL_INTERVAL_MS  = 10000;  // verificar captcha a cada 10s
 const POLL_MAX_CHECKS   = 12;     // 12 × 10s = 120s máximo
 const MAX_RETRIES       = 2;      // reinícios por coleta se timeout
 
+async function activateCaptchaSolver() {
+  const data = await chrome.storage.local.get(["settings"]);
+  const settings = data.settings || {};
+  const patch = {
+    ...settings,
+    enabled: true,
+    recaptcha_auto_open: true,
+    recaptcha_auto_solve: true,
+  };
+  await chrome.storage.local.set({ settings: patch });
+  try {
+    await chrome.runtime.sendMessage([
+      Math.random().toString(36).slice(2),
+      "settings::update",
+      patch
+    ]);
+  } catch {}
+}
+
 // ─── Carregar preferência de navegação salva ────
 chrome.storage.local.get(["navMode"], (data) => {
   if (data.navMode) navMode = data.navMode;
 });
+
+activateCaptchaSolver().catch(() => {});
 
 // ─── Keepalive: evita que o service worker durma durante o bot ────
 chrome.alarms.create("keepalive", { periodInMinutes: 0.4 }); // a cada 24s
@@ -74,6 +97,7 @@ let botState = {
 };
 let botTabId = null;
 let navMode  = 'tab'; // 'tab' | 'same' — preferência do usuário
+let lastCaptchaSolverStep = 0;
 
 // ─── Helpers ──────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -126,8 +150,24 @@ function getPublicState() {
 // ─── Mensagens do popup/dashboard ────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_STATE")  { sendResponse(getPublicState()); }
-  if (msg.type === "START_BOT")  { if (!botState.rodando) startBot(msg.email); sendResponse({ ok: true }); }
+  if (msg.type === "START_BOT")  {
+    if (!botState.rodando) {
+      activateCaptchaSolver()
+        .then(() => addLog("🧩 Solver de captcha ativado com sucesso.", "ok"))
+        .catch(() => addLog("⚠️ Não foi possível confirmar a ativação do solver de captcha.", "warn"))
+        .finally(() => startBot(msg.emails || msg.email));
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "STOP_BOT")   { botState.parar = true; addLog("Parada solicitada...", "warn"); sendResponse({ ok: true }); }
+  if (msg.type === "CAPTCHA_SOLVER_STEP") {
+    const step = Number(msg?.detail?.count || 0);
+    if (step > lastCaptchaSolverStep) {
+      lastCaptchaSolverStep = step;
+      addLog(`🧩 Solver captcha em execução (passo ${step}).`, "info");
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "RESET")      { resetState(); sendResponse({ ok: true }); }
   if (msg.type === "RELOAD_FAUCETS") {
     // Recarregar lista customizada de faucets do storage
@@ -154,6 +194,7 @@ function resetState() {
   botState.faucets = FAUCETS.map(f => ({ ...f, status: "pending", coletas: 0, mensagem: "" }));
   botState.log = []; botState.parar = false; botState.rodando = false;
   botState.tempoInicio = null; botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   broadcastState();
 }
 
@@ -223,6 +264,36 @@ async function injetar(tabId, func, args = []) {
   }
 }
 
+async function kickRecaptcha(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        try {
+          const href = location.href || "";
+          const isAnchor = /\/recaptcha\/(api2|enterprise)\/anchor/.test(href);
+          if (isAnchor) {
+            const anchor = document.querySelector("#recaptcha-anchor");
+            if (anchor && anchor.getAttribute("aria-checked") !== "true") {
+              anchor.click();
+              return "anchor_clicked";
+            }
+          }
+          const verify = document.querySelector("#recaptcha-verify-button");
+          if (verify && !verify.disabled) {
+            verify.click();
+            return "verify_clicked";
+          }
+        } catch {}
+        return null;
+      }
+    });
+    return (results || []).map(r => r?.result).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Verificar estado da página (chamada pelo background) ──
 // Retorna: "daily_limit" | "success" | "captcha_open" | "captcha_closed" | "unknown"
 async function verificarPagina(tabId, prevCaptchaOpen) {
@@ -282,11 +353,29 @@ async function aguardarCaptcha(tabId, logPrefix) {
 
     if (estado === "daily_limit")          return "daily_limit";
     if (estado === "success")              return "success";
-    if (estado === "captcha_resolved_token") return "resolved";
-    if (estado === "captcha_closed")       return "resolved";
+    if (estado === "captcha_resolved_token") {
+      addLog(`${logPrefix}✅ Captcha resolvido (token detectado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
+    if (estado === "captcha_closed") {
+      addLog(`${logPrefix}✅ Captcha resolvido (challenge fechado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
 
     if (estado === "captcha_open") {
       captchaWasOpen = true;
+      if (elapsed >= 20 && elapsed % 20 === 0) {
+        const kicks = await kickRecaptcha(tabId);
+        if (kicks.includes("anchor_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no checkbox reCAPTCHA.`, "warn");
+        }
+        if (kicks.includes("verify_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no botão Verify.`, "warn");
+        }
+      }
+      if (lastCaptchaSolverStep === 0 && elapsed >= 30) {
+        addLog(`${logPrefix}[${elapsed}s] Solver sem atividade detectada. Verifique se a extensão de captcha foi recarregada.`, "warn");
+      }
       addLog(`${logPrefix}[${elapsed}s] reCAPTCHA aberto — aguardando o usuário resolver...`, "warn");
       continue;
     }
@@ -407,19 +496,57 @@ async function processarFaucet(idx, faucet, email) {
           break;
         }
 
-        // "resolved" — captcha ok, clicar em Verify
-        addLog(`${prefix}✔ Captcha resolvido! Clicando Verify...`, "ok");
+        // "resolved" — captcha ok, acionar callback + clicar em Verify/Claim
+        addLog(`${prefix}✔ Captcha resolvido! Tentando enviar claim...`, "ok");
         await sleep(500);
 
-        await injetar(tabId, () => {
-          const btns = ["#login", "button[type='submit']", ".btn-success", "button.btn-primary"];
-          for (const sel of btns) {
-            const b = document.querySelector(sel);
-            if (b) { b.click(); return; }
+        const submitInfo = await injetar(tabId, () => {
+          const token = document.querySelector("textarea[name='g-recaptcha-response'], input[name='g-recaptcha-response']");
+          if (token) {
+            token.dispatchEvent(new Event("input",  { bubbles: true }));
+            token.dispatchEvent(new Event("change", { bubbles: true }));
           }
+
+          let callbackCalled = false;
+          try {
+            if (typeof window.enableBtn === "function") { window.enableBtn(); callbackCalled = true; }
+          } catch {}
+          try {
+            if (typeof window.verifyCaptcha === "function") { window.verifyCaptcha(); callbackCalled = true; }
+          } catch {}
+
+          const selectors = [
+            "#login",
+            "button[type='submit']",
+            ".btn-success",
+            "button.btn-primary",
+            "button[onclick*='verify']",
+            "button[onclick*='claim']",
+            "button.btn:not([disabled])"
+          ];
+          for (const sel of selectors) {
+            const b = document.querySelector(sel);
+            if (!b) continue;
+            const style = window.getComputedStyle(b);
+            const visible = style.display !== "none" && style.visibility !== "hidden";
+            if (!visible || b.disabled) continue;
+            const txt = (b.textContent || "").toLowerCase();
+            if (sel === "button.btn:not([disabled])" && !/(claim|verify|continue|submit)/.test(txt)) continue;
+            b.click();
+            return { clicked: sel, callbackCalled };
+          }
+          return { clicked: null, callbackCalled };
         });
 
-        addLog(`${prefix}Verify clicado — aguardando resposta (8s)...`, "info");
+        if (submitInfo?.callbackCalled) {
+          addLog(`${prefix}Callback do site acionado (enableBtn/verifyCaptcha).`, "info");
+        }
+        if (submitInfo?.clicked) {
+          addLog(`${prefix}Botão de envio clicado (${submitInfo.clicked}).`, "info");
+        } else {
+          addLog(`${prefix}Nenhum botão de envio encontrado após captcha resolvido.`, "warn");
+        }
+        addLog(`${prefix}Envio executado — aguardando resposta (8s)...`, "info");
         await sleep(8000);
 
         // 6. Verificar resultado final
@@ -623,23 +750,25 @@ async function validateLicense() {
 }
 
 // ─── BOT PRINCIPAL ────────────────────────────
-async function startBot(email) {
+async function startBot(emailOrList) {
+  const emails = (Array.isArray(emailOrList) ? emailOrList : [emailOrList])
+    .map(e => String(e || "").trim())
+    .filter(e => e.includes("@"));
+  const uniqueEmails = [...new Set(emails)];
+  if (!uniqueEmails.length) {
+    addLog("✖ Nenhum e-mail FaucetPay válido informado.", "error");
+    return;
+  }
+
   // Marcar como "validando" antes de qualquer coisa
   botState.rodando = true; botState.parar = false;
   botState.tempoInicio = Date.now(); botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   botState.log = [];
   broadcastState();
 
-  // ── Verificar se já tem licença válida em cache ──
-  const cached = await new Promise(r => chrome.storage.local.get(["validatedLicense"], r));
-  let licenseOk = !!(cached.validatedLicense && cached.validatedLicense.length > 0);
-
-  if (!licenseOk) {
-    // Validar agora — abre a guia, aguarda o código
-    licenseOk = await validateLicense();
-  } else {
-    addLog(`✔ Licença em cache: ${cached.validatedLicense}`, "ok");
-  }
+  // Sempre validar a licença ao clicar em iniciar
+  let licenseOk = await validateLicense();
 
   if (!licenseOk) {
     // Sem licença — abortar
@@ -659,33 +788,57 @@ async function startBot(email) {
   const source = (stored.customFaucets && stored.customFaucets.length > 0)
     ? stored.customFaucets.filter(f => f.enabled !== false)
     : FAUCETS;
-  botState.faucets = source.map(f => ({ ...f, status:"pending", coletas:0, mensagem:"" }));
 
   addLog("═".repeat(42), "ok");
   addLog(`BOT INICIADO — ${new Date().toLocaleString("pt-BR")}`, "ok");
-  addLog(`E-mail: ${email} | Faucets: ${FAUCETS.length}`, "info");
+  addLog(`Contas FaucetPay: ${uniqueEmails.length} | Faucets: ${source.length}`, "info");
   addLog("═".repeat(42), "ok");
 
-  const res = { ok: [], falhou: [] };
+  const totals = { ok: 0, falhou: 0 };
+  const accountReports = [];
 
   try {
-    const activeFaucets = botState.faucets.map((f,i) => ({...f, _idx:i}));
-  for (let idx = 0; idx < activeFaucets.length; idx++) {
+    for (let accountIdx = 0; accountIdx < uniqueEmails.length; accountIdx++) {
       if (botState.parar) { addLog("Bot parado pelo usuário.", "warn"); break; }
+      const email = uniqueEmails[accountIdx];
+      const res = { ok: [], falhou: [] };
 
-      botState.faucetIdx = idx;
-      const f = activeFaucets[idx];
-      addLog(`\n[${String(idx+1).padStart(2,"0")}/${activeFaucets.length}] ${f.coin} — ${f.site}`, "info");
+      botState.faucets = source.map(f => ({ ...f, status:"pending", coletas:0, mensagem:"" }));
+      botState.faucetIdx = 0;
+      broadcastState();
 
-      if (idx > 0) {
-        addLog(`Pausa de ${PAUSA_ENTRE/1000}s...`, "info");
-        await sleep(PAUSA_ENTRE);
+      addLog("─".repeat(42), "info");
+      addLog(`Conta [${accountIdx + 1}/${uniqueEmails.length}]: ${email}`, "info");
+      addLog("─".repeat(42), "info");
+
+      const activeFaucets = botState.faucets.map((f,i) => ({...f, _idx:i}));
+      for (let idx = 0; idx < activeFaucets.length; idx++) {
+        if (botState.parar) { addLog("Bot parado pelo usuário.", "warn"); break; }
+
+        botState.faucetIdx = idx;
+        const f = activeFaucets[idx];
+        addLog(`\n[${String(idx+1).padStart(2,"0")}/${activeFaucets.length}] ${f.coin} — ${f.site}`, "info");
+
+        if (idx > 0) {
+          addLog(`Pausa de ${PAUSA_ENTRE/1000}s...`, "info");
+          await sleep(PAUSA_ENTRE);
+        }
+
+        if (botState.parar) break;
+
+        const ok = await processarFaucet(idx, f, email);
+        (ok ? res.ok : res.falhou).push(`${f.coin}(${f.site === "claimfreecoins" ? "cfc" : "bee"})`);
       }
 
-      if (botState.parar) break;
+      totals.ok += res.ok.length;
+      totals.falhou += res.falhou.length;
+      accountReports.push({ email, ...res });
 
-      const ok = await processarFaucet(idx, f, email);
-      (ok ? res.ok : res.falhou).push(`${f.coin}(${f.site === "claimfreecoins" ? "cfc" : "bee"})`);
+      addLog(`Resumo da conta ${email}: ✔ ${res.ok.length} · ✖ ${res.falhou.length}`, res.falhou.length ? "warn" : "ok");
+      if (accountIdx < uniqueEmails.length - 1 && !botState.parar) {
+        addLog("Próxima conta em 5s...", "info");
+        await sleep(5000);
+      }
     }
   } finally {
     botTabId = null;
@@ -693,14 +846,17 @@ async function startBot(email) {
 
     addLog("═".repeat(42), "ok");
     addLog(`RELATÓRIO — ${new Date().toLocaleTimeString("pt-BR")}`, "ok");
-    addLog(`✔ Sucesso: ${res.ok.length} → ${res.ok.join(", ") || "—"}`, "ok");
-    addLog(`✖ Falhou:  ${res.falhou.length} → ${res.falhou.join(", ") || "—"}`, res.falhou.length ? "error" : "info");
+    for (const acc of accountReports) {
+      addLog(`Conta ${acc.email} → ✔ ${acc.ok.length} | ✖ ${acc.falhou.length}`, acc.falhou.length ? "warn" : "ok");
+    }
+    addLog(`✔ Sucesso total: ${totals.ok}`, "ok");
+    addLog(`✖ Falhas total:  ${totals.falhou}`, totals.falhou ? "error" : "info");
     addLog("═".repeat(42), "ok");
 
     chrome.notifications.create({
       type: "basic", iconUrl: "icons/icon48.png",
       title: "RealMoney Bot — Concluído",
-      message: `✔ ${res.ok.length} sucesso · ✖ ${res.falhou.length} falhas`,
+      message: `✔ ${totals.ok} sucesso · ✖ ${totals.falhou} falhas`,
     });
     broadcastState();
   }
