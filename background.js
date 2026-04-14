@@ -4,6 +4,8 @@
 // Não depende de mensagens do content.js para desbloquear
 // ─────────────────────────────────────────────
 
+importScripts(chrome.runtime.getURL("iacaptchar/background.js"));
+
 const FAUCETS = [
   { coin: "BTC",  url: "https://claimfreecoins.io/bitcoin-faucet/",   site: "claimfreecoins" },
   { coin: "ETH",  url: "https://claimfreecoins.io/ethereum-faucet/",  site: "claimfreecoins" },
@@ -53,10 +55,31 @@ const POLL_INTERVAL_MS  = 10000;  // verificar captcha a cada 10s
 const POLL_MAX_CHECKS   = 12;     // 12 × 10s = 120s máximo
 const MAX_RETRIES       = 2;      // reinícios por coleta se timeout
 
+async function activateCaptchaSolver() {
+  const data = await chrome.storage.local.get(["settings"]);
+  const settings = data.settings || {};
+  const patch = {
+    ...settings,
+    enabled: true,
+    recaptcha_auto_open: true,
+    recaptcha_auto_solve: true,
+  };
+  await chrome.storage.local.set({ settings: patch });
+  try {
+    await chrome.runtime.sendMessage([
+      Math.random().toString(36).slice(2),
+      "settings::update",
+      patch
+    ]);
+  } catch {}
+}
+
 // ─── Carregar preferência de navegação salva ────
 chrome.storage.local.get(["navMode"], (data) => {
   if (data.navMode) navMode = data.navMode;
 });
+
+activateCaptchaSolver().catch(() => {});
 
 // ─── Keepalive: evita que o service worker durma durante o bot ────
 chrome.alarms.create("keepalive", { periodInMinutes: 0.4 }); // a cada 24s
@@ -74,6 +97,7 @@ let botState = {
 };
 let botTabId = null;
 let navMode  = 'tab'; // 'tab' | 'same' — preferência do usuário
+let lastCaptchaSolverStep = 0;
 
 // ─── Helpers ──────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -126,8 +150,24 @@ function getPublicState() {
 // ─── Mensagens do popup/dashboard ────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_STATE")  { sendResponse(getPublicState()); }
-  if (msg.type === "START_BOT")  { if (!botState.rodando) startBot(msg.email); sendResponse({ ok: true }); }
+  if (msg.type === "START_BOT")  {
+    if (!botState.rodando) {
+      activateCaptchaSolver()
+        .then(() => addLog("🧩 Solver de captcha ativado com sucesso.", "ok"))
+        .catch(() => addLog("⚠️ Não foi possível confirmar a ativação do solver de captcha.", "warn"))
+        .finally(() => startBot(msg.email));
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "STOP_BOT")   { botState.parar = true; addLog("Parada solicitada...", "warn"); sendResponse({ ok: true }); }
+  if (msg.type === "CAPTCHA_SOLVER_STEP") {
+    const step = Number(msg?.detail?.count || 0);
+    if (step > lastCaptchaSolverStep) {
+      lastCaptchaSolverStep = step;
+      addLog(`🧩 Solver captcha em execução (passo ${step}).`, "info");
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "RESET")      { resetState(); sendResponse({ ok: true }); }
   if (msg.type === "RELOAD_FAUCETS") {
     // Recarregar lista customizada de faucets do storage
@@ -154,6 +194,7 @@ function resetState() {
   botState.faucets = FAUCETS.map(f => ({ ...f, status: "pending", coletas: 0, mensagem: "" }));
   botState.log = []; botState.parar = false; botState.rodando = false;
   botState.tempoInicio = null; botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   broadcastState();
 }
 
@@ -223,6 +264,36 @@ async function injetar(tabId, func, args = []) {
   }
 }
 
+async function kickRecaptcha(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        try {
+          const href = location.href || "";
+          const isAnchor = /\/recaptcha\/(api2|enterprise)\/anchor/.test(href);
+          if (isAnchor) {
+            const anchor = document.querySelector("#recaptcha-anchor");
+            if (anchor && anchor.getAttribute("aria-checked") !== "true") {
+              anchor.click();
+              return "anchor_clicked";
+            }
+          }
+          const verify = document.querySelector("#recaptcha-verify-button");
+          if (verify && !verify.disabled) {
+            verify.click();
+            return "verify_clicked";
+          }
+        } catch {}
+        return null;
+      }
+    });
+    return (results || []).map(r => r?.result).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Verificar estado da página (chamada pelo background) ──
 // Retorna: "daily_limit" | "success" | "captcha_open" | "captcha_closed" | "unknown"
 async function verificarPagina(tabId, prevCaptchaOpen) {
@@ -282,11 +353,29 @@ async function aguardarCaptcha(tabId, logPrefix) {
 
     if (estado === "daily_limit")          return "daily_limit";
     if (estado === "success")              return "success";
-    if (estado === "captcha_resolved_token") return "resolved";
-    if (estado === "captcha_closed")       return "resolved";
+    if (estado === "captcha_resolved_token") {
+      addLog(`${logPrefix}✅ Captcha resolvido (token detectado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
+    if (estado === "captcha_closed") {
+      addLog(`${logPrefix}✅ Captcha resolvido (challenge fechado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
 
     if (estado === "captcha_open") {
       captchaWasOpen = true;
+      if (elapsed >= 20 && elapsed % 20 === 0) {
+        const kicks = await kickRecaptcha(tabId);
+        if (kicks.includes("anchor_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no checkbox reCAPTCHA.`, "warn");
+        }
+        if (kicks.includes("verify_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no botão Verify.`, "warn");
+        }
+      }
+      if (lastCaptchaSolverStep === 0 && elapsed >= 30) {
+        addLog(`${logPrefix}[${elapsed}s] Solver sem atividade detectada. Verifique se a extensão de captcha foi recarregada.`, "warn");
+      }
       addLog(`${logPrefix}[${elapsed}s] reCAPTCHA aberto — aguardando o usuário resolver...`, "warn");
       continue;
     }
@@ -627,6 +716,7 @@ async function startBot(email) {
   // Marcar como "validando" antes de qualquer coisa
   botState.rodando = true; botState.parar = false;
   botState.tempoInicio = Date.now(); botState.faucetIdx = 0;
+  lastCaptchaSolverStep = 0;
   botState.log = [];
   broadcastState();
 

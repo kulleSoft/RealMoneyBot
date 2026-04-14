@@ -83,7 +83,7 @@ function incStep() {
 let phashMod;
 async function phash(src) {
   if (!phashMod)
-    phashMod = await import(chrome.runtime.getURL('captcha/phash-browser.js'));
+    phashMod = await import(chrome.runtime.getURL('iacaptchar/captcha/phash-browser.js'));
   return phashMod.phash(src);           
 }
 
@@ -301,7 +301,7 @@ if (grid === '3x3') {
     async function recognizeWithAI(payload) {
       if (!recogModPromise) {
         recogModPromise = import(
-          chrome.runtime.getURL('captcha/recaptcha_ai.js')  
+          chrome.runtime.getURL('iacaptchar/captcha/recaptcha_ai.js')  
         );
       }
       const { recognizeRecaptcha } = await recogModPromise;

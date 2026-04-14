@@ -29,7 +29,7 @@ const THR = {
 let ortP;
 async function ort() {
   if (!ortP) {
-    ortP = import(chrome.runtime.getURL('libs/onnxruntime-web/ort.esm.js')).catch(err => {
+    ortP = import(chrome.runtime.getURL('iacaptchar/libs/onnxruntime-web/ort.esm.js')).catch(err => {
       console.error('[ort] Failed to load ONNX Runtime module:', err);
       ortP = undefined;
       throw err;
@@ -52,7 +52,7 @@ async function runSafe(sess, feeds) {
 }
 
 
-const TYPE_MODEL_URL = chrome.runtime.getURL('models/type.onnx');
+const TYPE_MODEL_URL = chrome.runtime.getURL('iacaptchar/models/type.onnx');
 
 
 const TYPE_INDEX = Object.freeze({
@@ -92,8 +92,8 @@ async function getTypeSession() {
 }
 
 
-const GRID_MODEL_URL = chrome.runtime.getURL('models/grid.onnx');
-const GRID_META_URL  = chrome.runtime.getURL('models/grid.meta.json');
+const GRID_MODEL_URL = chrome.runtime.getURL('iacaptchar/models/grid.onnx');
+const GRID_META_URL  = chrome.runtime.getURL('iacaptchar/models/grid.meta.json');
 
 let gridSessionP; 
 let gridMetaP;
