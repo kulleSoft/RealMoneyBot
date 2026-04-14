@@ -152,7 +152,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "START_BOT")  {
     if (!botState.rodando) {
       activateCaptchaSolver()
-        .catch(() => {})
+        .then(() => addLog("🧩 Solver de captcha ativado com sucesso.", "ok"))
+        .catch(() => addLog("⚠️ Não foi possível confirmar a ativação do solver de captcha.", "warn"))
         .finally(() => startBot(msg.email));
     }
     sendResponse({ ok: true });
@@ -312,8 +313,14 @@ async function aguardarCaptcha(tabId, logPrefix) {
 
     if (estado === "daily_limit")          return "daily_limit";
     if (estado === "success")              return "success";
-    if (estado === "captcha_resolved_token") return "resolved";
-    if (estado === "captcha_closed")       return "resolved";
+    if (estado === "captcha_resolved_token") {
+      addLog(`${logPrefix}✅ Captcha resolvido (token detectado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
+    if (estado === "captcha_closed") {
+      addLog(`${logPrefix}✅ Captcha resolvido (challenge fechado). Solver em funcionamento.`, "ok");
+      return "resolved";
+    }
 
     if (estado === "captcha_open") {
       captchaWasOpen = true;
