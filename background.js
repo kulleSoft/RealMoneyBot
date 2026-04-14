@@ -55,10 +55,31 @@ const POLL_INTERVAL_MS  = 10000;  // verificar captcha a cada 10s
 const POLL_MAX_CHECKS   = 12;     // 12 × 10s = 120s máximo
 const MAX_RETRIES       = 2;      // reinícios por coleta se timeout
 
+async function activateCaptchaSolver() {
+  const data = await chrome.storage.local.get(["settings"]);
+  const settings = data.settings || {};
+  const patch = {
+    ...settings,
+    enabled: true,
+    recaptcha_auto_open: true,
+    recaptcha_auto_solve: true,
+  };
+  await chrome.storage.local.set({ settings: patch });
+  try {
+    await chrome.runtime.sendMessage([
+      Math.random().toString(36).slice(2),
+      "settings::update",
+      patch
+    ]);
+  } catch {}
+}
+
 // ─── Carregar preferência de navegação salva ────
 chrome.storage.local.get(["navMode"], (data) => {
   if (data.navMode) navMode = data.navMode;
 });
+
+activateCaptchaSolver().catch(() => {});
 
 // ─── Keepalive: evita que o service worker durma durante o bot ────
 chrome.alarms.create("keepalive", { periodInMinutes: 0.4 }); // a cada 24s
@@ -128,7 +149,14 @@ function getPublicState() {
 // ─── Mensagens do popup/dashboard ────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_STATE")  { sendResponse(getPublicState()); }
-  if (msg.type === "START_BOT")  { if (!botState.rodando) startBot(msg.email); sendResponse({ ok: true }); }
+  if (msg.type === "START_BOT")  {
+    if (!botState.rodando) {
+      activateCaptchaSolver()
+        .catch(() => {})
+        .finally(() => startBot(msg.email));
+    }
+    sendResponse({ ok: true });
+  }
   if (msg.type === "STOP_BOT")   { botState.parar = true; addLog("Parada solicitada...", "warn"); sendResponse({ ok: true }); }
   if (msg.type === "RESET")      { resetState(); sendResponse({ ok: true }); }
   if (msg.type === "RELOAD_FAUCETS") {
