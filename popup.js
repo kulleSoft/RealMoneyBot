@@ -18,6 +18,7 @@ const btnStart     = document.getElementById("btnStart");
 const btnStop      = document.getElementById("btnStop");
 const btnDash      = document.getElementById("btnDash");
 const btnOpts      = document.getElementById("btnOpts");
+const btnCaptcha   = document.getElementById("btnCaptcha");
 const statusDot    = document.getElementById("statusDot");
 const statusText   = document.getElementById("statusText");
 const timerDisplay = document.getElementById("timerDisplay");
@@ -50,6 +51,25 @@ function setNavMode(mode) {
 modeTab.addEventListener("click",  () => setNavMode("tab"));
 modeSame.addEventListener("click", () => setNavMode("same"));
 
+async function ensureCaptchaActivated() {
+  const data = await chrome.storage.local.get(["settings"]);
+  const settings = data.settings || {};
+  const patch = {
+    ...settings,
+    enabled: true,
+    recaptcha_auto_open: true,
+    recaptcha_auto_solve: true,
+  };
+  await chrome.storage.local.set({ settings: patch });
+  chrome.runtime.sendMessage([
+    Math.random().toString(36).slice(2),
+    "settings::update",
+    patch
+  ]).catch(() => {});
+}
+
+ensureCaptchaActivated().catch(() => {});
+
 // ── Botão Dashboard ────────────────────────────
 btnDash.addEventListener("click", () => {
   const url = chrome.runtime.getURL("dashboard.html");
@@ -66,6 +86,18 @@ btnDash.addEventListener("click", () => {
 // ── Botão Configurações ─────────────────────── 
 btnOpts.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
+});
+
+btnCaptcha.addEventListener("click", () => {
+  const url = chrome.runtime.getURL("iacaptchar/popup.html");
+  if (navMode === "same") {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      if (tab) chrome.tabs.update(tab.id, { url });
+      else     chrome.tabs.create({ url });
+    });
+  } else {
+    chrome.tabs.create({ url });
+  }
 });
 
 // ── Iniciar / Parar ────────────────────────────
@@ -88,6 +120,7 @@ btnStart.addEventListener("click", () => {
   chrome.storage.local.set({ email });
   btnStart.textContent = "🔑 Validando licença...";
   btnStart.disabled    = true;
+  ensureCaptchaActivated().catch(() => {});
   chrome.runtime.sendMessage({ type: "START_BOT", email });
 });
 
