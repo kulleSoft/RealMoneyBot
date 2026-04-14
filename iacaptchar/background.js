@@ -1,4 +1,4 @@
-importScripts(chrome.runtime.getURL('background_sqlite.js'));  
+importScripts(chrome.runtime.getURL('iacaptchar/background_sqlite.js'));  
     {
         let e = "1";
         async function t() {
@@ -9,11 +9,18 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
             })
         }
         let o = chrome.runtime.getManifest().content_scripts.filter(n => n.js.includes("eventhook.js")).map(n => n.matches);
-        t().then(n => {
-            n.includes(e) || chrome.scripting.registerContentScripts([{
+        let s = o.flat().filter(Boolean);
+        if (!s.length) {
+            s = ["*://*.google.com/recaptcha/*", "*://*.recaptcha.net/recaptcha/*"];
+        }
+        t().then(async () => {
+            try {
+                await chrome.scripting.unregisterContentScripts({ ids: [e] });
+            } catch {}
+            await chrome.scripting.registerContentScripts([{
                 id: e,
-                matches: o.flat(),
-                js: ["eventhook/loader.js"],
+                matches: s,
+                js: ["iacaptchar/eventhook/loader.js"],
                 runAt: "document_start",
                 allFrames: !0,
                 world: "MAIN"
@@ -99,7 +106,7 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
         let t = e ? "" : "g",
             r = [new Promise(o => {
                 v.setIcon({
-                    path: Object.fromEntries([16, 32, 48, 128].map(n => [n, `/icon/${n}${t}.png`]))
+                    path: Object.fromEntries([16, 32, 48, 128].map(n => [n, `/iacaptchar/icon/${n}${t}.png`]))
                 }, o)
             })];
         return w && r.push(new Promise(o => {
@@ -216,7 +223,7 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
             chrome.scripting.registerContentScripts([{
                 id: S,
                 matches: ["*://challenges.cloudflare.com/*"],
-                js: ["captcha/turnstile.js"],
+                js: ["iacaptchar/captcha/turnstile.js"],
                 runAt: "document_start",
                 allFrames: !0,
                 world: "MAIN"
@@ -301,8 +308,10 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
         "tab::registerDetectedCaptcha": U
     };
     i.runtime.onMessage.addListener((e, t, r) => {
+        if (!Array.isArray(e)) return !1;
         let o = e[1],
             n = ue[o];
+        if (typeof n != "function") return r([D(e[0]), `Unknown RPC: ${o}`]), !0;
         return Promise.resolve(n(e.slice(2), t)).then(a => {
             r([D(e[0]), a])
         }).catch(a => {
@@ -559,4 +568,4 @@ async function initReportingKey() {
   }
 }
 
-importScripts(chrome.runtime.getURL('uploader.js'));
+importScripts(chrome.runtime.getURL('iacaptchar/uploader.js'));
