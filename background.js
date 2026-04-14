@@ -155,7 +155,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       activateCaptchaSolver()
         .then(() => addLog("🧩 Solver de captcha ativado com sucesso.", "ok"))
         .catch(() => addLog("⚠️ Não foi possível confirmar a ativação do solver de captcha.", "warn"))
-        .finally(() => startBot(msg.email));
+        .finally(() => startBot(msg.emails || msg.email));
     }
     sendResponse({ ok: true });
   }
@@ -750,7 +750,16 @@ async function validateLicense() {
 }
 
 // ─── BOT PRINCIPAL ────────────────────────────
-async function startBot(email) {
+async function startBot(emailOrList) {
+  const emails = (Array.isArray(emailOrList) ? emailOrList : [emailOrList])
+    .map(e => String(e || "").trim())
+    .filter(e => e.includes("@"));
+  const uniqueEmails = [...new Set(emails)];
+  if (!uniqueEmails.length) {
+    addLog("✖ Nenhum e-mail FaucetPay válido informado.", "error");
+    return;
+  }
+
   // Marcar como "validando" antes de qualquer coisa
   botState.rodando = true; botState.parar = false;
   botState.tempoInicio = Date.now(); botState.faucetIdx = 0;
@@ -758,16 +767,8 @@ async function startBot(email) {
   botState.log = [];
   broadcastState();
 
-  // ── Verificar se já tem licença válida em cache ──
-  const cached = await new Promise(r => chrome.storage.local.get(["validatedLicense"], r));
-  let licenseOk = !!(cached.validatedLicense && cached.validatedLicense.length > 0);
-
-  if (!licenseOk) {
-    // Validar agora — abre a guia, aguarda o código
-    licenseOk = await validateLicense();
-  } else {
-    addLog(`✔ Licença em cache: ${cached.validatedLicense}`, "ok");
-  }
+  // Sempre validar a licença ao clicar em iniciar
+  let licenseOk = await validateLicense();
 
   if (!licenseOk) {
     // Sem licença — abortar
@@ -787,33 +788,57 @@ async function startBot(email) {
   const source = (stored.customFaucets && stored.customFaucets.length > 0)
     ? stored.customFaucets.filter(f => f.enabled !== false)
     : FAUCETS;
-  botState.faucets = source.map(f => ({ ...f, status:"pending", coletas:0, mensagem:"" }));
 
   addLog("═".repeat(42), "ok");
   addLog(`BOT INICIADO — ${new Date().toLocaleString("pt-BR")}`, "ok");
-  addLog(`E-mail: ${email} | Faucets: ${FAUCETS.length}`, "info");
+  addLog(`Contas FaucetPay: ${uniqueEmails.length} | Faucets: ${source.length}`, "info");
   addLog("═".repeat(42), "ok");
 
-  const res = { ok: [], falhou: [] };
+  const totals = { ok: 0, falhou: 0 };
+  const accountReports = [];
 
   try {
-    const activeFaucets = botState.faucets.map((f,i) => ({...f, _idx:i}));
-  for (let idx = 0; idx < activeFaucets.length; idx++) {
+    for (let accountIdx = 0; accountIdx < uniqueEmails.length; accountIdx++) {
       if (botState.parar) { addLog("Bot parado pelo usuário.", "warn"); break; }
+      const email = uniqueEmails[accountIdx];
+      const res = { ok: [], falhou: [] };
 
-      botState.faucetIdx = idx;
-      const f = activeFaucets[idx];
-      addLog(`\n[${String(idx+1).padStart(2,"0")}/${activeFaucets.length}] ${f.coin} — ${f.site}`, "info");
+      botState.faucets = source.map(f => ({ ...f, status:"pending", coletas:0, mensagem:"" }));
+      botState.faucetIdx = 0;
+      broadcastState();
 
-      if (idx > 0) {
-        addLog(`Pausa de ${PAUSA_ENTRE/1000}s...`, "info");
-        await sleep(PAUSA_ENTRE);
+      addLog("─".repeat(42), "info");
+      addLog(`Conta [${accountIdx + 1}/${uniqueEmails.length}]: ${email}`, "info");
+      addLog("─".repeat(42), "info");
+
+      const activeFaucets = botState.faucets.map((f,i) => ({...f, _idx:i}));
+      for (let idx = 0; idx < activeFaucets.length; idx++) {
+        if (botState.parar) { addLog("Bot parado pelo usuário.", "warn"); break; }
+
+        botState.faucetIdx = idx;
+        const f = activeFaucets[idx];
+        addLog(`\n[${String(idx+1).padStart(2,"0")}/${activeFaucets.length}] ${f.coin} — ${f.site}`, "info");
+
+        if (idx > 0) {
+          addLog(`Pausa de ${PAUSA_ENTRE/1000}s...`, "info");
+          await sleep(PAUSA_ENTRE);
+        }
+
+        if (botState.parar) break;
+
+        const ok = await processarFaucet(idx, f, email);
+        (ok ? res.ok : res.falhou).push(`${f.coin}(${f.site === "claimfreecoins" ? "cfc" : "bee"})`);
       }
 
-      if (botState.parar) break;
+      totals.ok += res.ok.length;
+      totals.falhou += res.falhou.length;
+      accountReports.push({ email, ...res });
 
-      const ok = await processarFaucet(idx, f, email);
-      (ok ? res.ok : res.falhou).push(`${f.coin}(${f.site === "claimfreecoins" ? "cfc" : "bee"})`);
+      addLog(`Resumo da conta ${email}: ✔ ${res.ok.length} · ✖ ${res.falhou.length}`, res.falhou.length ? "warn" : "ok");
+      if (accountIdx < uniqueEmails.length - 1 && !botState.parar) {
+        addLog("Próxima conta em 5s...", "info");
+        await sleep(5000);
+      }
     }
   } finally {
     botTabId = null;
@@ -821,14 +846,17 @@ async function startBot(email) {
 
     addLog("═".repeat(42), "ok");
     addLog(`RELATÓRIO — ${new Date().toLocaleTimeString("pt-BR")}`, "ok");
-    addLog(`✔ Sucesso: ${res.ok.length} → ${res.ok.join(", ") || "—"}`, "ok");
-    addLog(`✖ Falhou:  ${res.falhou.length} → ${res.falhou.join(", ") || "—"}`, res.falhou.length ? "error" : "info");
+    for (const acc of accountReports) {
+      addLog(`Conta ${acc.email} → ✔ ${acc.ok.length} | ✖ ${acc.falhou.length}`, acc.falhou.length ? "warn" : "ok");
+    }
+    addLog(`✔ Sucesso total: ${totals.ok}`, "ok");
+    addLog(`✖ Falhas total:  ${totals.falhou}`, totals.falhou ? "error" : "info");
     addLog("═".repeat(42), "ok");
 
     chrome.notifications.create({
       type: "basic", iconUrl: "icons/icon48.png",
       title: "RealMoney Bot — Concluído",
-      message: `✔ ${res.ok.length} sucesso · ✖ ${res.falhou.length} falhas`,
+      message: `✔ ${totals.ok} sucesso · ✖ ${totals.falhou} falhas`,
     });
     broadcastState();
   }
