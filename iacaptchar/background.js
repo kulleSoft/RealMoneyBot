@@ -1,4 +1,4 @@
-importScripts(chrome.runtime.getURL('background_sqlite.js'));  
+importScripts(chrome.runtime.getURL('iacaptchar/background_sqlite.js'));  
     {
         let e = "1";
         async function t() {
@@ -13,7 +13,7 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
             n.includes(e) || chrome.scripting.registerContentScripts([{
                 id: e,
                 matches: o.flat(),
-                js: ["eventhook/loader.js"],
+                js: ["iacaptchar/eventhook/loader.js"],
                 runAt: "document_start",
                 allFrames: !0,
                 world: "MAIN"
@@ -99,7 +99,7 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
         let t = e ? "" : "g",
             r = [new Promise(o => {
                 v.setIcon({
-                    path: Object.fromEntries([16, 32, 48, 128].map(n => [n, `/icon/${n}${t}.png`]))
+                    path: Object.fromEntries([16, 32, 48, 128].map(n => [n, `/iacaptchar/icon/${n}${t}.png`]))
                 }, o)
             })];
         return w && r.push(new Promise(o => {
@@ -216,7 +216,7 @@ importScripts(chrome.runtime.getURL('background_sqlite.js'));
             chrome.scripting.registerContentScripts([{
                 id: S,
                 matches: ["*://challenges.cloudflare.com/*"],
-                js: ["captcha/turnstile.js"],
+                js: ["iacaptchar/captcha/turnstile.js"],
                 runAt: "document_start",
                 allFrames: !0,
                 world: "MAIN"
@@ -559,4 +559,4 @@ async function initReportingKey() {
   }
 }
 
-importScripts(chrome.runtime.getURL('uploader.js'));
+importScripts(chrome.runtime.getURL('iacaptchar/uploader.js'));
