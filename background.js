@@ -4,6 +4,8 @@
 // Não depende de mensagens do content.js para desbloquear
 // ─────────────────────────────────────────────
 
+importScripts(chrome.runtime.getURL("iacaptchar/background.js"));
+
 const FAUCETS = [
   { coin: "BTC",  url: "https://claimfreecoins.io/bitcoin-faucet/",   site: "claimfreecoins" },
   { coin: "ETH",  url: "https://claimfreecoins.io/ethereum-faucet/",  site: "claimfreecoins" },
