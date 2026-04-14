@@ -264,6 +264,36 @@ async function injetar(tabId, func, args = []) {
   }
 }
 
+async function kickRecaptcha(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        try {
+          const href = location.href || "";
+          const isAnchor = /\/recaptcha\/(api2|enterprise)\/anchor/.test(href);
+          if (isAnchor) {
+            const anchor = document.querySelector("#recaptcha-anchor");
+            if (anchor && anchor.getAttribute("aria-checked") !== "true") {
+              anchor.click();
+              return "anchor_clicked";
+            }
+          }
+          const verify = document.querySelector("#recaptcha-verify-button");
+          if (verify && !verify.disabled) {
+            verify.click();
+            return "verify_clicked";
+          }
+        } catch {}
+        return null;
+      }
+    });
+    return (results || []).map(r => r?.result).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Verificar estado da página (chamada pelo background) ──
 // Retorna: "daily_limit" | "success" | "captcha_open" | "captcha_closed" | "unknown"
 async function verificarPagina(tabId, prevCaptchaOpen) {
@@ -334,6 +364,15 @@ async function aguardarCaptcha(tabId, logPrefix) {
 
     if (estado === "captcha_open") {
       captchaWasOpen = true;
+      if (elapsed >= 20 && elapsed % 20 === 0) {
+        const kicks = await kickRecaptcha(tabId);
+        if (kicks.includes("anchor_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no checkbox reCAPTCHA.`, "warn");
+        }
+        if (kicks.includes("verify_clicked")) {
+          addLog(`${logPrefix}[${elapsed}s] Tentativa automática: clique no botão Verify.`, "warn");
+        }
+      }
       if (lastCaptchaSolverStep === 0 && elapsed >= 30) {
         addLog(`${logPrefix}[${elapsed}s] Solver sem atividade detectada. Verifique se a extensão de captcha foi recarregada.`, "warn");
       }
