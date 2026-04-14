@@ -1,5 +1,5 @@
 
-importScripts(chrome.runtime.getURL('lib/sql-wasm.js'));   
+importScripts(chrome.runtime.getURL('iacaptchar/lib/sql-wasm.js'));   
 if (typeof self.initSqlJs !== 'function') {
   console.error('initSqlJs not found in sql-wasm.js — stop!');
   throw new Error('sql.js runtime not available');
@@ -7,13 +7,13 @@ if (typeof self.initSqlJs !== 'function') {
 
 
 const SQLPromise = self.initSqlJs({
-  locateFile: f => chrome.runtime.getURL('lib/' + f)        
+  locateFile: f => chrome.runtime.getURL('iacaptchar/lib/' + f)        
 });
 
 const DBPromise = SQLPromise.then(async SQL => {
   
   const buf = await (await fetch(
-    chrome.runtime.getURL('db/captcha.sqlite')
+    chrome.runtime.getURL('iacaptchar/db/captcha.sqlite')
   )).arrayBuffer();
 
   return new SQL.Database(new Uint8Array(buf));              
@@ -83,6 +83,5 @@ const hit = candidates.find(r => r.hamming < 10);
        ? { selected: !!hit.selected }                
        : { selected: hit.mask.toString(16).toUpperCase().padStart(4, '0') };
 };
-
 
 

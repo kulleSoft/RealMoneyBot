@@ -172,6 +172,18 @@
 
   observer.observe(document.body, { childList: true, subtree: true, attributes: true });
 
+  // ─── Telemetria do solver (iacaptchar) ───────
+  // O recaptcha.js do iacaptchar publica postMessage { type: "recaptcha:step" }.
+  // Encaminhamos para o background para aparecer no "Log de atividade".
+  window.addEventListener("message", (ev) => {
+    const data = ev?.data;
+    if (!data || data.type !== "recaptcha:step") return;
+    chrome.runtime.sendMessage({
+      type: "CAPTCHA_SOLVER_STEP",
+      detail: data.detail || null,
+    }).catch(() => {});
+  });
+
   // Limpeza após 5 minutos
   setTimeout(function () {
     stopPolling();
