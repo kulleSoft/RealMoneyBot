@@ -9,13 +9,17 @@ importScripts(chrome.runtime.getURL('iacaptchar/background_sqlite.js'));
             })
         }
         let o = chrome.runtime.getManifest().content_scripts.filter(n => n.js.includes("eventhook.js")).map(n => n.matches);
+        let s = o.flat().filter(Boolean);
+        if (!s.length) {
+            s = ["*://*.google.com/recaptcha/*", "*://*.recaptcha.net/recaptcha/*"];
+        }
         t().then(async () => {
             try {
                 await chrome.scripting.unregisterContentScripts({ ids: [e] });
             } catch {}
             await chrome.scripting.registerContentScripts([{
                 id: e,
-                matches: o.flat(),
+                matches: s,
                 js: ["iacaptchar/eventhook/loader.js"],
                 runAt: "document_start",
                 allFrames: !0,
@@ -304,8 +308,10 @@ importScripts(chrome.runtime.getURL('iacaptchar/background_sqlite.js'));
         "tab::registerDetectedCaptcha": U
     };
     i.runtime.onMessage.addListener((e, t, r) => {
+        if (!Array.isArray(e)) return !1;
         let o = e[1],
             n = ue[o];
+        if (typeof n != "function") return r([D(e[0]), `Unknown RPC: ${o}`]), !0;
         return Promise.resolve(n(e.slice(2), t)).then(a => {
             r([D(e[0]), a])
         }).catch(a => {
