@@ -496,19 +496,57 @@ async function processarFaucet(idx, faucet, email) {
           break;
         }
 
-        // "resolved" — captcha ok, clicar em Verify
-        addLog(`${prefix}✔ Captcha resolvido! Clicando Verify...`, "ok");
+        // "resolved" — captcha ok, acionar callback + clicar em Verify/Claim
+        addLog(`${prefix}✔ Captcha resolvido! Tentando enviar claim...`, "ok");
         await sleep(500);
 
-        await injetar(tabId, () => {
-          const btns = ["#login", "button[type='submit']", ".btn-success", "button.btn-primary"];
-          for (const sel of btns) {
-            const b = document.querySelector(sel);
-            if (b) { b.click(); return; }
+        const submitInfo = await injetar(tabId, () => {
+          const token = document.querySelector("textarea[name='g-recaptcha-response'], input[name='g-recaptcha-response']");
+          if (token) {
+            token.dispatchEvent(new Event("input",  { bubbles: true }));
+            token.dispatchEvent(new Event("change", { bubbles: true }));
           }
+
+          let callbackCalled = false;
+          try {
+            if (typeof window.enableBtn === "function") { window.enableBtn(); callbackCalled = true; }
+          } catch {}
+          try {
+            if (typeof window.verifyCaptcha === "function") { window.verifyCaptcha(); callbackCalled = true; }
+          } catch {}
+
+          const selectors = [
+            "#login",
+            "button[type='submit']",
+            ".btn-success",
+            "button.btn-primary",
+            "button[onclick*='verify']",
+            "button[onclick*='claim']",
+            "button.btn:not([disabled])"
+          ];
+          for (const sel of selectors) {
+            const b = document.querySelector(sel);
+            if (!b) continue;
+            const style = window.getComputedStyle(b);
+            const visible = style.display !== "none" && style.visibility !== "hidden";
+            if (!visible || b.disabled) continue;
+            const txt = (b.textContent || "").toLowerCase();
+            if (sel === "button.btn:not([disabled])" && !/(claim|verify|continue|submit)/.test(txt)) continue;
+            b.click();
+            return { clicked: sel, callbackCalled };
+          }
+          return { clicked: null, callbackCalled };
         });
 
-        addLog(`${prefix}Verify clicado — aguardando resposta (8s)...`, "info");
+        if (submitInfo?.callbackCalled) {
+          addLog(`${prefix}Callback do site acionado (enableBtn/verifyCaptcha).`, "info");
+        }
+        if (submitInfo?.clicked) {
+          addLog(`${prefix}Botão de envio clicado (${submitInfo.clicked}).`, "info");
+        } else {
+          addLog(`${prefix}Nenhum botão de envio encontrado após captcha resolvido.`, "warn");
+        }
+        addLog(`${prefix}Envio executado — aguardando resposta (8s)...`, "info");
         await sleep(8000);
 
         // 6. Verificar resultado final
