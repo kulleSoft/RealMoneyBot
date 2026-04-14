@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>RealMoney Bot — Configurações</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#f8fafc;color:#0f172a;font-family:'Inter',system-ui,sans-serif;font-size:13px;min-height:100vh;color-scheme:light only}
+@media(prefers-color-scheme:dark){html,body{background:#f8fafc!important;color:#0f172a!important}}
+body{display:flex;justify-content:center;padding:40px 20px}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
+
+.container{width:100%;max-width:460px}
+
+/* Header */
+.header{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#C89500,#F5C400);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 3px 10px rgba(200,149,0,.28)}
+.header h1{font-size:17px;font-weight:700;color:#0f172a;letter-spacing:-.3px}
+.header p{font-size:11px;color:#94a3b8;margin-top:2px}
+
+/* Card */
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:#94a3b8;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid #f1f5f9}
+
+/* Field */
+.field{margin-bottom:16px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:6px}
+.field input,.field select{
+  width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;
+  padding:9px 13px;color:#0f172a;font-family:'JetBrains Mono',monospace;font-size:12px;
+  outline:none;transition:border .2s,box-shadow .2s;-webkit-appearance:none;appearance:none
+}
+.field input:focus,.field select:focus{border-color:#C89500;box-shadow:0 0 0 3px rgba(200,149,0,.1)}
+.field input::placeholder{color:#cbd5e1}
+.field .hint{font-size:10px;color:#94a3b8;margin-top:5px;line-height:1.5}
+.select-wrap{position:relative}
+.select-wrap::after{content:'▾';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none;font-size:13px}
+
+/* Save */
+.save-row{display:flex;align-items:center;gap:12px;padding-top:4px}
+.btn-save{height:38px;padding:0 22px;border-radius:10px;border:1px solid #86efac;background:#f0fdf4;color:#16a34a;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s}
+.btn-save:hover{background:#dcfce7}
+.saved-msg{font-size:12px;color:#16a34a;font-weight:600;opacity:0;transition:opacity .3s}
+.saved-msg.show{opacity:1}
+
+/* Nota */
+.note{background:#FFF8E0;border:1px solid #EDD47A;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:11px;color:#A07800;line-height:1.55}
+.note strong{font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="logo">⬡</div>
+    <div>
+      <h1>Configurações</h1>
+      <p>RealMoney Bot v1.0.0 · KulleSoft</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>💡 Dica:</strong> Você também pode editar as configurações diretamente no Dashboard — clique no botão <strong>⚙</strong> no canto superior direito.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Conta</div>
+    <div class="field">
+      <label>E-mail FaucetPay</label>
+      <input id="email" type="email" placeholder="seu@email.com">
+      <div class="hint">Preenchido automaticamente no campo de endereço dos faucets.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Comportamento</div>
+    <div class="field">
+      <label>Pausa entre faucets (segundos)</label>
+      <input id="pausaEntre" type="number" min="3" max="60" value="8">
+      <div class="hint">Tempo de espera entre um faucet e outro.</div>
+    </div>
+    <div class="field">
+      <label>Timeout do captcha (segundos)</label>
+      <input id="captchaTimeout" type="number" min="30" max="300" value="120">
+      <div class="hint">Tempo máximo aguardando resolução do reCAPTCHA antes de recarregar a página.</div>
+    </div>
+    <div class="field">
+      <label>Coletas por faucet</label>
+      <input id="numColetas" type="number" min="1" max="5" value="3">
+      <div class="hint">Quantas tentativas de claim serão feitas por faucet.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Navegação</div>
+    <div class="field">
+      <label>Modo de abertura dos faucets</label>
+      <div class="select-wrap">
+        <select id="navMode">
+          <option value="tab">Nova guia — abre em uma guia separada</option>
+          <option value="same">Mesma guia — navega na guia atual</option>
+        </select>
+      </div>
+      <div class="hint">Define como o bot abre cada faucet durante a automação.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Notificações</div>
+    <div class="field">
+      <label>Notificações do Chrome</label>
+      <div class="select-wrap">
+        <select id="notificacoes">
+          <option value="on">Ativadas — notificar ao concluir</option>
+          <option value="off">Desativadas</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="save-row">
+    <button class="btn-save" id="btnSave">Salvar configurações</button>
+    <span class="saved-msg" id="savedMsg">✔ Salvo com sucesso!</span>
+  </div>
+
+</div>
+<script>
+  const fields = ["email","pausaEntre","captchaTimeout","numColetas","notificacoes","navMode"];
+  chrome.storage.local.get(fields, (data) => {
+    fields.forEach(f => { if (data[f] !== undefined) document.getElementById(f).value = data[f]; });
+  });
+  document.getElementById("btnSave").addEventListener("click", () => {
+    const data = {};
+    fields.forEach(f => { data[f] = document.getElementById(f).value; });
+    chrome.storage.local.set(data, () => {
+      const msg = document.getElementById("savedMsg");
+      msg.classList.add("show");
+      setTimeout(() => msg.classList.remove("show"), 2500);
+    });
+  });
+</script>
+</body>
+</html>

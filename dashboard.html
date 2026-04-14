@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RealMoney Bot — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── RESET + BASE ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:'Inter',system-ui,sans-serif;font-size:13px;background:#f8fafc;color:#0f172a;color-scheme:light only}
+@media(prefers-color-scheme:dark){html,body{background:#f8fafc!important;color:#0f172a!important}}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+
+/* ── LAYOUT ── */
+.app{display:flex;flex-direction:column;height:100%}
+.body-row{display:flex;flex:1;overflow:hidden;position:relative}
+.main-col{display:flex;flex-direction:column;flex:1;overflow:hidden}
+
+/* ── TOPBAR ── */
+.topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;background:#fff;border-bottom:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06);flex-shrink:0;z-index:10}
+.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#C89500,#F5C400);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;box-shadow:0 2px 8px rgba(200,149,0,.3)}
+.topbar-title h1{font-size:14px;font-weight:700;color:#0f172a;letter-spacing:-.3px}
+.topbar-title p{font-size:10px;color:#94a3b8;margin-top:1px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.status-pill{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:4px 12px}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#94a3b8;transition:background .3s}
+.status-dot.running{background:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.18);animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.timer{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:4px 12px;letter-spacing:.8px}
+.btn-settings{width:32px;height:32px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;flex-shrink:0}
+.btn-settings:hover{background:#f8fafc;border-color:#cbd5e1;color:#0f172a}
+.btn-settings.active{background:#FFF8E0;border-color:#EDD47A;color:#A07800}
+
+/* ── STATS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);flex-shrink:0;border-bottom:1px solid #e2e8f0;gap:1px;background:#e2e8f0}
+.stat{background:#fff;padding:12px 20px;position:relative;overflow:hidden}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat:nth-child(1)::before{background:#C89500}
+.stat:nth-child(2)::before{background:#10b981}
+.stat:nth-child(3)::before{background:#f59e0b}
+.stat:nth-child(4)::before{background:#ef4444}
+.stat-val{font-size:32px;font-weight:700;letter-spacing:-1.5px;line-height:1}
+.stat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-top:3px}
+
+/* ── PROGRESS ── */
+.progress-bar{height:3px;background:#f1f5f9;flex-shrink:0}
+.progress-fill{height:100%;background:linear-gradient(90deg,#C89500,#F5C400);transition:width .6s ease}
+
+/* ── TOOLBAR ── */
+.toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#fff;border-bottom:1px solid #e2e8f0;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.search-wrap{position:relative}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;pointer-events:none}
+.search-input{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px 6px 28px;color:#0f172a;font-family:'Inter',sans-serif;font-size:12px;width:180px;outline:none;transition:border .2s,box-shadow .2s}
+.search-input:focus{border-color:#C89500;box-shadow:0 0 0 3px rgba(200,149,0,.1)}
+.tbtn{height:30px;padding:0 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#475569;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.tbtn:hover{background:#f8fafc;border-color:#cbd5e1}
+.tbtn:disabled{opacity:.4;cursor:not-allowed}
+.tbtn-gold{background:#FFF8E0;border-color:#EDD47A;color:#A07800}
+.tbtn-gold:hover{background:#FFF3C0}
+.tbtn-green{background:#f0fdf4;border-color:#86efac;color:#16a34a}
+.tbtn-green:hover:not(:disabled){background:#dcfce7}
+.tbtn-red{background:#fef2f2;border-color:#fca5a5;color:#dc2626}
+.tbtn-red:hover:not(:disabled){background:#fee2e2}
+.spacer{flex:1}
+.email-wrap{display:flex;align-items:center;gap:8px}
+.email-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8}
+.email-field{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;color:#0f172a;font-family:'JetBrains Mono',monospace;font-size:11px;width:210px;outline:none;transition:border .2s,box-shadow .2s}
+.email-field:focus{border-color:#C89500;box-shadow:0 0 0 3px rgba(200,149,0,.1)}
+
+/* ── TABLE ── */
+.table-wrap{flex:1;overflow-y:auto;background:#fff}
+table{width:100%;border-collapse:collapse}
+thead th{position:sticky;top:0;background:#f8fafc;color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:8px 16px;text-align:left;border-bottom:2px solid #e2e8f0;z-index:2}
+tbody tr{border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s;background:#fff}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected{background:#FFF8E0;border-left:3px solid #C89500}
+tbody tr.selected td:first-child{padding-left:13px}
+tbody td{padding:7px 16px;font-size:12px}
+.coin{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;color:#0f172a;min-width:42px;display:inline-block}
+.chip{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.chip-cfc{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
+.chip-bee{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.url-cell{font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-cell{font-family:'JetBrains Mono',monospace;font-size:11px;color:#94a3b8;text-align:center}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 9px;border-radius:6px}
+.badge-pending{color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0}
+.badge-running{color:#d97706;background:#fffbeb;border:1px solid #fde68a}
+.badge-ok{color:#16a34a;background:#f0fdf4;border:1px solid #86efac}
+.badge-error{color:#dc2626;background:#fef2f2;border:1px solid #fca5a5}
+.badge-skip{color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe}
+.table-hint{font-size:10px;color:#94a3b8;padding:5px 16px;background:#fff;border-top:1px solid #f1f5f9;flex-shrink:0}
+
+/* ── SIDEBAR (log + quick) ── */
+.sidebar{width:272px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:#fff;border-left:1px solid #e2e8f0;box-shadow:-2px 0 8px rgba(0,0,0,.04);transition:transform .25s ease,opacity .25s ease}
+.sidebar-section{padding:14px 14px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8}
+.qgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 14px 10px}
+.qbtn{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px;color:#475569;font-size:11px;font-weight:600;cursor:pointer;text-align:center;transition:all .15s}
+.qbtn:hover{background:#FFF8E0;border-color:#EDD47A;color:#A07800}
+.qbtn-full{grid-column:1/-1}
+.sidebar-div{height:1px;background:#f1f5f9;margin:0 14px 10px}
+.log-title{padding:0 14px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8}
+.log-box{flex:1;overflow-y:auto;padding:8px 14px;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.65;background:#f8fafc;border-top:1px solid #e2e8f0}
+.log-entry{display:flex;gap:6px;padding:1px 0}
+.log-ts{color:#cbd5e1;flex-shrink:0;font-size:9.5px;margin-top:1px}
+.log-ok{color:#16a34a}.log-error{color:#dc2626}.log-warn{color:#d97706}.log-skip{color:#2563eb}.log-info{color:#64748b}
+
+/* ── SETTINGS PANEL (slide-in, substitui sidebar) ── */
+.settings-panel{
+  position:absolute;right:0;top:0;bottom:0;
+  width:320px;
+  background:#fff;
+  border-left:1px solid #e2e8f0;
+  box-shadow:-4px 0 24px rgba(0,0,0,.1);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .28s cubic-bezier(.4,0,.2,1);
+  z-index:50;
+  overflow:hidden;
+}
+.settings-panel.open{transform:translateX(0)}
+
+/* Abas do settings */
+.sp-tabs{display:flex;border-bottom:1px solid #e2e8f0;flex-shrink:0;background:#f8fafc}
+.sp-tab{flex:1;height:38px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:#94a3b8;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;margin-bottom:-1px}
+.sp-tab:hover{color:#475569;background:#f1f5f9}
+.sp-tab.active{color:#C89500;border-bottom-color:#C89500;background:#fff}
+.sp-body-hidden{display:none!important}
+
+/* Settings header */
+.sp-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e2e8f0;flex-shrink:0}
+.sp-header h2{font-size:14px;font-weight:700;color:#0f172a;letter-spacing:-.2px}
+.sp-close{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:#64748b;transition:all .15s;line-height:1}
+.sp-close:hover{background:#fee2e2;border-color:#fca5a5;color:#dc2626}
+
+/* Settings body */
+.sp-body{flex:1;overflow-y:auto;padding:20px}
+.sp-section{margin-bottom:20px}
+.sp-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:#94a3b8;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #f1f5f9}
+.sp-field{margin-bottom:14px}
+.sp-field:last-child{margin-bottom:0}
+.sp-field label{display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:6px}
+.sp-field input,.sp-field select{width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;color:#0f172a;font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;transition:border .2s,box-shadow .2s;-webkit-appearance:none;appearance:none}
+.sp-field input:focus,.sp-field select:focus{border-color:#C89500;box-shadow:0 0 0 3px rgba(200,149,0,.1)}
+.sp-field input::placeholder{color:#cbd5e1}
+.sp-field .sp-hint{font-size:10px;color:#94a3b8;margin-top:5px;line-height:1.5}
+.sp-select-wrap{position:relative}
+.sp-select-wrap::after{content:'▾';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none;font-size:13px}
+
+/* Settings footer */
+.sp-footer{padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#fff}
+.sp-save{flex:1;height:36px;border-radius:9px;border:1px solid #86efac;background:#f0fdf4;color:#16a34a;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s}
+.sp-save:hover{background:#dcfce7}
+.sp-saved{font-size:11px;color:#16a34a;font-weight:600;opacity:0;transition:opacity .3s}
+.sp-saved.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="logo">⬡</div>
+    <div class="topbar-title">
+      <h1>RealMoney Bot — Dashboard</h1>
+      <p>By KulleSoft</p>
+    </div>
+    <div class="topbar-right">
+      <div class="status-pill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Aguardando</span>
+      </div>
+      <div class="timer" id="timerDisplay">00:00:00</div>
+      <button class="btn-settings" id="btnSettings" title="Configurações">⚙</button>
+    </div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat"><div class="stat-val" id="sTotal" style="color:#C89500">40</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-val" id="sOk"    style="color:#10b981">0</div><div class="stat-label">Concluídos</div></div>
+    <div class="stat"><div class="stat-val" id="sPend"  style="color:#f59e0b">40</div><div class="stat-label">Pendentes</div></div>
+    <div class="stat"><div class="stat-val" id="sErr"   style="color:#ef4444">0</div><div class="stat-label">Erros</div></div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+
+  <!-- BODY -->
+  <div class="body-row">
+
+    <!-- MAIN -->
+    <div class="main-col">
+      <div class="toolbar">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="filterInput" placeholder="Filtrar moeda ou site...">
+        </div>
+        <button class="tbtn" id="btnSelAll">Sel. todos</button>
+        <button class="tbtn" id="btnClearSel">Limpar sel.</button>
+        <button class="tbtn tbtn-gold" id="btnOpenSel">⧉ Abrir selecionados</button>
+        <div class="spacer"></div>
+        <div class="email-wrap">
+          <span class="email-label">E-mail</span>
+          <input type="email" class="email-field" id="emailInput" placeholder="seu@email.com">
+        </div>
+        <button class="tbtn tbtn-green" id="btnStart">▶ Iniciar Bot</button>
+        <button class="tbtn tbtn-red" id="btnStop" disabled>■ Parar</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:55px">Moeda</th>
+              <th style="width:90px">Site</th>
+              <th>URL</th>
+              <th style="width:70px;text-align:center">Coleta</th>
+              <th style="width:135px">Status</th>
+            </tr>
+          </thead>
+          <tbody id="faucetTable"></tbody>
+        </table>
+      </div>
+      <div class="table-hint">Duplo clique em uma linha para abrir o faucet no navegador</div>
+    </div>
+
+    <!-- SIDEBAR (log + quick open) -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-section">Abertura Rápida</div>
+      <div class="qgrid">
+        <button class="qbtn" data-site="claimfreecoins">claimfreecoins</button>
+        <button class="qbtn" data-site="beefaucet">beefaucet</button>
+        <button class="qbtn qbtn-full" data-coin="BTC">⬡ BTC — todos os sites</button>
+      </div>
+      <div class="sidebar-div"></div>
+      <div class="log-title">Log de Atividade</div>
+      <div class="log-box" id="logBox"></div>
+    </div>
+
+    <!-- SETTINGS PANEL (slide-in sobre a sidebar) -->
+    <div class="settings-panel" id="settingsPanel">
+
+      <div class="sp-header">
+        <h2>⚙ Configurações</h2>
+        <button class="sp-close" id="btnCloseSettings">✕</button>
+      </div>
+
+      <!-- Abas -->
+      <div class="sp-tabs">
+        <button class="sp-tab active" data-tab="general">⚙ Geral</button>
+        <button class="sp-tab"       data-tab="faucets">🌐 Faucets</button>
+      </div>
+
+      <div class="sp-body" id="spBodyGeneral">
+
+        <!-- Conta -->
+        <div class="sp-section">
+          <div class="sp-section-title">Conta</div>
+          <div class="sp-field">
+            <label>E-mail FaucetPay</label>
+            <input id="cfg-email" type="email" placeholder="seu@email.com">
+            <div class="sp-hint">Preenchido automaticamente nos faucets.</div>
+          </div>
+        </div>
+
+        <!-- Comportamento -->
+        <div class="sp-section">
+          <div class="sp-section-title">Comportamento</div>
+          <div class="sp-field">
+            <label>Modo de abertura dos faucets</label>
+            <div class="sp-select-wrap">
+              <select id="cfg-navMode">
+                <option value="tab">Nova guia — abre em uma guia separada</option>
+                <option value="same">Mesma guia — navega na guia atual</option>
+              </select>
+            </div>
+            <div class="sp-hint">Define como o bot abre cada faucet durante a automação.</div>
+          </div>
+          <div class="sp-field">
+            <label>Pausa entre faucets (segundos)</label>
+            <input id="cfg-pausaEntre" type="number" min="3" max="60" value="8">
+            <div class="sp-hint">Espera entre um faucet e outro.</div>
+          </div>
+          <div class="sp-field">
+            <label>Timeout do captcha (segundos)</label>
+            <input id="cfg-captchaTimeout" type="number" min="30" max="300" value="120">
+            <div class="sp-hint">Tempo máximo aguardando o reCAPTCHA antes de recarregar.</div>
+          </div>
+          <div class="sp-field">
+            <label>Coletas por faucet</label>
+            <input id="cfg-numColetas" type="number" min="1" max="5" value="3">
+            <div class="sp-hint">Tentativas de claim por faucet.</div>
+          </div>
+        </div>
+
+        <!-- Notificações -->
+        <div class="sp-section">
+          <div class="sp-section-title">Notificações</div>
+          <div class="sp-field">
+            <label>Notificações do Chrome</label>
+            <div class="sp-select-wrap">
+              <select id="cfg-notificacoes">
+                <option value="on">Ativadas — notificar ao concluir</option>
+                <option value="off">Desativadas</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Licença -->
+        <div class="sp-section">
+          <div class="sp-section-title">Licença</div>
+          <div class="sp-field">
+            <label>Status da licença</label>
+            <div id="licenseStatus" style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;color:#94a3b8">
+              Verificando...
+            </div>
+            <div class="sp-hint">A licença é gerada automaticamente em <a href="https://thanks.notsync.io/" target="_blank" style="color:#C89500">thanks.notsync.io</a></div>
+          </div>
+          <div class="sp-field">
+            <button id="btnClearLicense" style="width:100%;height:30px;border-radius:8px;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s">
+              🔑 Limpar licença (forçar revalidação)
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /sp-body general -->
+
+      <!-- Aba Faucets -->
+      <div class="sp-body sp-body-hidden" id="spBodyFaucets">
+        <div id="faucetEditorContainer"></div>
+      </div>
+
+      <div class="sp-footer">
+        <button class="sp-save" id="btnSaveSettings">Salvar configurações</button>
+        <span class="sp-saved" id="spSaved">✔ Salvo!</span>
+      </div>
+
+    </div><!-- /settings-panel -->
+
+  </div><!-- /body-row -->
+</div><!-- /app -->
+
+<script src="faucet-editor.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>
