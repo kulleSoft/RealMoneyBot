@@ -137,6 +137,7 @@ body{display:flex;justify-content:center;padding:40px 20px}
     const data = {};
     fields.forEach(f => { data[f] = document.getElementById(f).value; });
     chrome.storage.local.set(data, () => {
+      if (data.navMode) chrome.runtime.sendMessage({ type: "SET_NAV_MODE", mode: data.navMode }).catch(() => {});
       const msg = document.getElementById("savedMsg");
       msg.classList.add("show");
       setTimeout(() => msg.classList.remove("show"), 2500);

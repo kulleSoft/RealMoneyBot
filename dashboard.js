@@ -13,6 +13,7 @@ const LOG_CLS = {
 };
 
 let lastLogLen = 0, allFaucets = [], selectedIdxs = new Set(), filterText = "";
+let targetColetas = 3;
 
 const $  = id => document.getElementById(id);
 const emailInput   = $("emailInput");
@@ -28,6 +29,18 @@ const logBox       = $("logBox");
 
 // Email persistido
 chrome.storage.local.get(["email"], ({email}) => { if (email) emailInput.value = email; });
+chrome.storage.local.get(["numColetas"], ({ numColetas }) => {
+  const n = Number(numColetas);
+  if (Number.isFinite(n) && n >= 1) targetColetas = Math.min(5, Math.max(1, n));
+});
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.numColetas) return;
+  const n = Number(changes.numColetas.newValue);
+  if (Number.isFinite(n) && n >= 1) {
+    targetColetas = Math.min(5, Math.max(1, n));
+    renderTable();
+  }
+});
 emailInput.addEventListener("change", () => chrome.storage.local.set({email: emailInput.value}));
 
 // Botões toolbar
@@ -105,7 +118,7 @@ function renderTable() {
       <td><span class="coin">${f.coin}</span></td>
       <td><span class="chip ${isCfc?"chip-cfc":"chip-bee"}">${isCfc?"CFC":"BEE"}</span></td>
       <td class="url-cell" title="${f.url}">${short}</td>
-      <td class="col-cell">${f.coletas}/3</td>
+      <td class="col-cell">${f.coletas}/${targetColetas}</td>
       <td><span class="${STATUS_BADGE[f.status]||"badge badge-pending"}">${STATUS_LABELS[f.status]||f.status}</span></td>
     </tr>`;
   }).join("");

@@ -52,8 +52,46 @@ const FAUCETS = [
 const DAILY_LIMIT_TEXT  = "Your daily claim limit has been reached";
 const PAUSA_ENTRE       = 8000;   // ms entre faucets
 const POLL_INTERVAL_MS  = 10000;  // verificar captcha a cada 10s
-const POLL_MAX_CHECKS   = 12;     // 12 × 10s = 120s máximo
 const MAX_RETRIES       = 2;      // reinícios por coleta se timeout
+const DEFAULT_RUNTIME_CONFIG = {
+  pausaEntreMs: PAUSA_ENTRE,
+  captchaTimeoutSec: 120,
+  numColetas: 3,
+  notificacoes: "on",
+};
+
+let runtimeConfig = { ...DEFAULT_RUNTIME_CONFIG };
+
+function clamp(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function normalizeRuntimeConfig(raw = {}) {
+  return {
+    pausaEntreMs: clamp(raw.pausaEntre, 3, 60, DEFAULT_RUNTIME_CONFIG.pausaEntreMs / 1000) * 1000,
+    captchaTimeoutSec: clamp(raw.captchaTimeout, 30, 300, DEFAULT_RUNTIME_CONFIG.captchaTimeoutSec),
+    numColetas: clamp(raw.numColetas, 1, 5, DEFAULT_RUNTIME_CONFIG.numColetas),
+    notificacoes: raw.notificacoes === "off" ? "off" : "on",
+  };
+}
+
+async function loadRuntimeConfig() {
+  const raw = await chrome.storage.local.get(["pausaEntre", "captchaTimeout", "numColetas", "notificacoes"]);
+  runtimeConfig = normalizeRuntimeConfig(raw);
+  return runtimeConfig;
+}
+
+function notifyUser(title, message) {
+  if (runtimeConfig.notificacoes === "off") return;
+  chrome.notifications.create({
+    type: "basic",
+    iconUrl: "icons/icon48.png",
+    title,
+    message,
+  });
+}
 
 async function activateCaptchaSolver() {
   const data = await chrome.storage.local.get(["settings"]);
@@ -77,6 +115,15 @@ async function activateCaptchaSolver() {
 // ─── Carregar preferência de navegação salva ────
 chrome.storage.local.get(["navMode"], (data) => {
   if (data.navMode) navMode = data.navMode;
+});
+loadRuntimeConfig().catch(() => {});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (changes.navMode?.newValue) navMode = changes.navMode.newValue;
+  if (["pausaEntre", "captchaTimeout", "numColetas", "notificacoes"].some(k => k in changes)) {
+    loadRuntimeConfig().catch(() => {});
+  }
 });
 
 activateCaptchaSolver().catch(() => {});
@@ -337,16 +384,17 @@ async function verificarPagina(tabId, prevCaptchaOpen) {
 async function aguardarCaptcha(tabId, logPrefix) {
   let checks = 0;
   let captchaWasOpen = false;
+  const pollMaxChecks = Math.max(1, Math.ceil((runtimeConfig.captchaTimeoutSec * 1000) / POLL_INTERVAL_MS));
 
-  addLog(`${logPrefix}Verificando captcha a cada 10s (máx 120s)...`, "warn");
+  addLog(`${logPrefix}Verificando captcha a cada ${POLL_INTERVAL_MS / 1000}s (máx ${runtimeConfig.captchaTimeoutSec}s)...`, "warn");
 
-  while (checks < POLL_MAX_CHECKS) {
+  while (checks < pollMaxChecks) {
     if (botState.parar) return "parado";
 
     await sleep(POLL_INTERVAL_MS);
     checks++;
 
-    const elapsed = checks * 10;
+    const elapsed = checks * (POLL_INTERVAL_MS / 1000);
     const estado = await verificarPagina(tabId, captchaWasOpen);
 
     addLog(`${logPrefix}[${elapsed}s] Estado: ${estado}`, "info");
@@ -381,7 +429,7 @@ async function aguardarCaptcha(tabId, logPrefix) {
     }
 
     // "unknown" ou "waiting_user" — continua aguardando
-    addLog(`${logPrefix}[${elapsed}s] Aguardando interação... (${POLL_MAX_CHECKS - checks} checks restantes)`, "info");
+    addLog(`${logPrefix}[${elapsed}s] Aguardando interação... (${pollMaxChecks - checks} checks restantes)`, "info");
   }
 
   return "timeout";
@@ -394,11 +442,12 @@ async function processarFaucet(idx, faucet, email) {
 
   let sucessos = 0;
 
-  for (let coleta = 1; coleta <= 3; coleta++) {
+  const targetColetas = runtimeConfig.numColetas;
+  for (let coleta = 1; coleta <= targetColetas; coleta++) {
     if (botState.parar) { updateFaucet(idx, { status: "skip", mensagem: "Interrompido" }); return false; }
 
-    updateFaucet(idx, { coletas: coleta, mensagem: `Coleta ${coleta}/3` });
-    addLog(`  ▶ Coleta ${coleta}/3`, "info");
+    updateFaucet(idx, { coletas: coleta, mensagem: `Coleta ${coleta}/${targetColetas}` });
+    addLog(`  ▶ Coleta ${coleta}/${targetColetas}`, "info");
 
     let tentativa = 0;
     let coletaOk  = false;
@@ -483,7 +532,7 @@ async function processarFaucet(idx, faucet, email) {
         if (resultado === "daily_limit") { updateFaucet(idx, { status: "skip", mensagem: "Limite diário" }); return false; }
 
         if (resultado === "timeout") {
-          addLog(`${prefix}✖ 120s sem resolução — recarregando...`, "error");
+          addLog(`${prefix}✖ ${runtimeConfig.captchaTimeoutSec}s sem resolução — recarregando...`, "error");
           tentativa++;
           continue;
         }
@@ -585,13 +634,13 @@ async function processarFaucet(idx, faucet, email) {
       }
     } // while tentativa
 
-    addLog(`  ${coletaOk ? "✔" : "✖"} Coleta ${coleta}/3 ${coletaOk ? "concluída" : "falhou"}`, coletaOk ? "ok" : "error");
+    addLog(`  ${coletaOk ? "✔" : "✖"} Coleta ${coleta}/${targetColetas} ${coletaOk ? "concluída" : "falhou"}`, coletaOk ? "ok" : "error");
   } // for coleta
 
   const st = sucessos > 0 ? "ok" : "error";
-  updateFaucet(idx, { status: st, mensagem: `${sucessos}/3 coletas` });
-  addLog(`  ${faucet.coin}: ${sucessos}/3 coletas`, sucessos === 3 ? "ok" : sucessos > 0 ? "warn" : "error");
-  return sucessos === 3;
+  updateFaucet(idx, { status: st, mensagem: `${sucessos}/${targetColetas} coletas` });
+  addLog(`  ${faucet.coin}: ${sucessos}/${targetColetas} coletas`, sucessos === targetColetas ? "ok" : sucessos > 0 ? "warn" : "error");
+  return sucessos === targetColetas;
 }
 
 // ─── VALIDAÇÃO DE LICENÇA ────────────────────
@@ -751,6 +800,7 @@ async function validateLicense() {
 
 // ─── BOT PRINCIPAL ────────────────────────────
 async function startBot(emailOrList) {
+  await loadRuntimeConfig();
   const emails = (Array.isArray(emailOrList) ? emailOrList : [emailOrList])
     .map(e => String(e || "").trim())
     .filter(e => e.includes("@"));
@@ -775,11 +825,7 @@ async function startBot(emailOrList) {
     botState.rodando = false;
     botState.tempoInicio = null;
     broadcastState();
-    chrome.notifications.create({
-      type: "basic", iconUrl: "icons/icon48.png",
-      title: "RealMoney Bot — Licença inválida",
-      message: "Acesse " + LICENSE_URL + " para gerar sua licença.",
-    });
+    notifyUser("RealMoney Bot — Licença inválida", "Acesse " + LICENSE_URL + " para gerar sua licença.");
     return;
   }
 
@@ -820,8 +866,8 @@ async function startBot(emailOrList) {
         addLog(`\n[${String(idx+1).padStart(2,"0")}/${activeFaucets.length}] ${f.coin} — ${f.site}`, "info");
 
         if (idx > 0) {
-          addLog(`Pausa de ${PAUSA_ENTRE/1000}s...`, "info");
-          await sleep(PAUSA_ENTRE);
+          addLog(`Pausa de ${runtimeConfig.pausaEntreMs / 1000}s...`, "info");
+          await sleep(runtimeConfig.pausaEntreMs);
         }
 
         if (botState.parar) break;
@@ -853,11 +899,7 @@ async function startBot(emailOrList) {
     addLog(`✖ Falhas total:  ${totals.falhou}`, totals.falhou ? "error" : "info");
     addLog("═".repeat(42), "ok");
 
-    chrome.notifications.create({
-      type: "basic", iconUrl: "icons/icon48.png",
-      title: "RealMoney Bot — Concluído",
-      message: `✔ ${totals.ok} sucesso · ✖ ${totals.falhou} falhas`,
-    });
+    notifyUser("RealMoney Bot — Concluído", `✔ ${totals.ok} sucesso · ✖ ${totals.falhou} falhas`);
     broadcastState();
   }
 }
