@@ -101,11 +101,6 @@ btnCaptcha.addEventListener("click", () => {
 });
 
 // ── Iniciar / Parar ────────────────────────────
-// ── Extensão obrigatória ──────────────────────────────────────
-document.getElementById("btnInstallExt").addEventListener("click", () => {
-  chrome.tabs.create({ url: "https://chromewebstore.google.com/detail/free-ai-recaptcha-solver/iomcoelgdkghlligeempdbfcaobodacg" });
-});
-
 btnStart.addEventListener("click", () => {
   const raw = emailInput.value.trim();
   const emails = raw
