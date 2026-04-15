@@ -648,6 +648,13 @@ const LICENSE_URL  = "https://thanks.notsync.io/";
 const LICENSE_KEY  = "notsync_license";
 const LICENSE_POLL = 2000;   // verificar a cada 2s
 const LICENSE_MAX  = 120000; // desistir após 2 min
+const LICENSE_ORIGIN = "https://thanks.notsync.io";
+const LICENSE_MIN_WAIT_MS = 10000;
+
+function isValidLicenseCode(raw) {
+  const code = String(raw || "").trim();
+  return /^NOTSYNC-[A-Z0-9]{8,}$/.test(code);
+}
 
 async function validateLicense() {
   addLog("🔑 Abrindo página de licença...", "warn");
@@ -671,7 +678,7 @@ async function validateLicense() {
     setTimeout(resolve, 15000); // fallback 15s
   });
 
-  addLog("🔑 Aguarde 5s e clique em 'Validar entrada' no site...", "warn");
+  addLog("🔑 Aguarde 10s e clique em 'Validar entrada' no site...", "warn");
 
   // 3. Injetar em retry: limpar localStorage antigo, setar flags e anexar listener no botão
   //    Isso garante que licenças de sessões anteriores (Edge/Chrome) não passem.
@@ -681,13 +688,20 @@ async function validateLicense() {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: licTabId },
-        func: (licKey) => {
+        func: (licKey, expectedOrigin, minWaitMs) => {
+          const validCode = (value) => /^NOTSYNC-[A-Z0-9]{8,}$/.test(String(value || "").trim());
+
+          if (location.origin !== expectedOrigin) return;
+
           // SEMPRE limpar qualquer licença antiga do localStorage desta origem
           localStorage.removeItem(licKey);
 
           // Resetar flags de sessão — garantia cross-browser (Edge, Chrome, Arc...)
           window.__licenseReady    = false;
           window.__licenseCode     = null;
+          window.__licenseClickedAt = 0;
+          window.__licenseTrustedClick = false;
+          window.__licenseSourceOk = location.origin === expectedOrigin;
           window.__licenseListenerAttached = true;
 
           const btn = document.getElementById("validarBtn");
@@ -696,38 +710,52 @@ async function validateLicense() {
             const clone = btn.cloneNode(true);
             btn.parentNode.replaceChild(clone, btn);
 
-            clone.addEventListener("click", () => {
-              // Só capturar o código gerado NESTA sessão (após o timer de 5s da página)
-              const codigo = localStorage.getItem(licKey);
-              if (codigo && codigo.startsWith("NOTSYNC-")) {
+            clone.addEventListener("click", (ev) => {
+              // Garante interação humana real (não aceita click sintético/disparado por script)
+              if (!ev.isTrusted) return;
+
+              window.__licenseClickedAt = Date.now();
+              window.__licenseTrustedClick = true;
+              window.__licenseReady = false;
+              window.__licenseCode = null;
+
+              // Só capturar o código gerado NESTA sessão, após espera mínima
+              const tryCapture = () => {
+                const elapsed = Date.now() - window.__licenseClickedAt;
+                const codigo = localStorage.getItem(licKey);
+                if (elapsed >= minWaitMs && validCode(codigo)) {
+                  window.__licenseReady = true;
+                  window.__licenseCode  = String(codigo).trim();
+                  clone.textContent     = "✔ Validado!";
+                  clone.style.background = "#16a34a";
+                  clone.style.color      = "#fff";
+                  clone.disabled         = true;
+                  return true;
+                }
+                return false;
+              };
+
+              if (tryCapture()) {
                 window.__licenseReady = true;
-                window.__licenseCode  = codigo;
-                clone.textContent     = "✔ Validado!";
-                clone.style.background = "#16a34a";
-                clone.style.color      = "#fff";
-                clone.disabled         = true;
               } else {
-                // Código ainda não gerado (usuário clicou antes dos 5s)
+                // Código ainda não gerado (usuário clicou antes dos 10s)
                 clone.textContent = "⏳ Aguarde o código ser gerado...";
                 setTimeout(() => {
-                  const c2 = localStorage.getItem(licKey);
-                  if (c2 && c2.startsWith("NOTSYNC-")) {
-                    window.__licenseReady = true;
-                    window.__licenseCode  = c2;
+                  if (tryCapture()) {
                     clone.textContent     = "✔ Validado!";
                     clone.style.background = "#16a34a";
                     clone.style.color      = "#fff";
                     clone.disabled         = true;
                   }
-                }, 3000);
+                }, Math.max(3000, minWaitMs));
               }
             }, { once: true });
           }
         },
-        args: [LICENSE_KEY],
+        args: [LICENSE_KEY, LICENSE_ORIGIN, LICENSE_MIN_WAIT_MS],
       });
       listenerInjected = true;
-      addLog("🔑 Aguarde 5s e clique em 'Validar entrada' no site...", "warn");
+      addLog("🔑 Aguarde 10s e clique em 'Validar entrada' no site...", "warn");
       break;
     } catch (e) {
       if (attempt === 7) {
@@ -759,6 +787,10 @@ async function validateLicense() {
         func: () => ({
           ready:   window.__licenseReady   === true,
           code:    window.__licenseCode    || null,
+          trustedClick: window.__licenseTrustedClick === true,
+          sourceOk: window.__licenseSourceOk === true,
+          clickedAt: Number(window.__licenseClickedAt || 0),
+          origin: location.origin,
         }),
         args: [],
       });
@@ -766,9 +798,17 @@ async function validateLicense() {
       const data = result?.[0]?.result;
       if (!data) continue;
 
-      // Validação rigorosa: flag setada pelo clique E código com prefixo correto
-      if (data.ready === true && data.code && data.code.startsWith("NOTSYNC-")) {
-        license = data.code.trim();
+      // Validação rigorosa: origem correta + clique humano real + janela mínima + código válido
+      const elapsedSinceClick = data.clickedAt ? Date.now() - data.clickedAt : 0;
+      if (
+        data.ready === true &&
+        data.trustedClick === true &&
+        data.sourceOk === true &&
+        data.origin === LICENSE_ORIGIN &&
+        elapsedSinceClick >= LICENSE_MIN_WAIT_MS &&
+        isValidLicenseCode(data.code)
+      ) {
+        license = String(data.code).trim();
         break;
       }
 

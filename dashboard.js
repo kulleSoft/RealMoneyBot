@@ -242,7 +242,7 @@ const btnCloseSettings = document.getElementById("btnCloseSettings");
 const btnSaveSettings  = document.getElementById("btnSaveSettings");
 const spSaved          = document.getElementById("spSaved");
 
-const CFG_FIELDS = ["email","pausaEntre","captchaTimeout","numColetas","notificacoes","navMode"];
+const CFG_FIELDS = ["pausaEntre","captchaTimeout","numColetas","notificacoes","navMode"];
 
 // Carregar valores salvos ao abrir o painel
 function loadSettings() {
@@ -252,8 +252,6 @@ function loadSettings() {
       const el = document.getElementById("cfg-" + f);
       if (el && data[f] !== undefined) el.value = data[f];
     });
-    // sincroniza email com o campo da toolbar
-    if (data.email) emailInput.value = data.email;
   });
 }
 
@@ -279,8 +277,6 @@ btnSaveSettings.addEventListener("click", () => {
     if (el) data[f] = el.value;
   });
   chrome.storage.local.set(data, () => {
-    // sincroniza email com toolbar imediatamente
-    if (data.email) emailInput.value = data.email;
     // propaga navMode para o background
     if (data.navMode) chrome.runtime.sendMessage({ type: "SET_NAV_MODE", mode: data.navMode }).catch(()=>{});
     spSaved.classList.add("show");

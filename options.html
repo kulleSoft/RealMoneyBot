@@ -68,15 +68,6 @@ body{display:flex;justify-content:center;padding:40px 20px}
   </div>
 
   <div class="card">
-    <div class="card-title">Conta</div>
-    <div class="field">
-      <label>E-mail FaucetPay</label>
-      <input id="email" type="email" placeholder="seu@email.com">
-      <div class="hint">Preenchido automaticamente no campo de endereço dos faucets.</div>
-    </div>
-  </div>
-
-  <div class="card">
     <div class="card-title">Comportamento</div>
     <div class="field">
       <label>Pausa entre faucets (segundos)</label>
@@ -129,7 +120,7 @@ body{display:flex;justify-content:center;padding:40px 20px}
 
 </div>
 <script>
-  const fields = ["email","pausaEntre","captchaTimeout","numColetas","notificacoes","navMode"];
+  const fields = ["pausaEntre","captchaTimeout","numColetas","notificacoes","navMode"];
   chrome.storage.local.get(fields, (data) => {
     fields.forEach(f => { if (data[f] !== undefined) document.getElementById(f).value = data[f]; });
   });
