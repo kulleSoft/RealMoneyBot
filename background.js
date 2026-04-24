@@ -50,6 +50,7 @@ const FAUCETS = [
 ];
 
 const DAILY_LIMIT_TEXT  = "Your daily claim limit has been reached";
+const SAFETY_LIMIT_TEXT = "Faucet Safety Limit reached, try again later";
 const PAUSA_ENTRE       = 8000;   // ms entre faucets
 const POLL_INTERVAL_MS  = 10000;  // verificar captcha a cada 10s
 const MAX_RETRIES       = 2;      // reinícios por coleta se timeout
@@ -342,13 +343,14 @@ async function kickRecaptcha(tabId) {
 }
 
 // ─── Verificar estado da página (chamada pelo background) ──
-// Retorna: "daily_limit" | "success" | "captcha_open" | "captcha_closed" | "unknown"
+// Retorna: "daily_limit" | "safety_limit" | "success" | "captcha_open" | "captcha_closed" | "unknown"
 async function verificarPagina(tabId, prevCaptchaOpen) {
-  return await injetar(tabId, (limitText, wasCaptchaOpen) => {
+  return await injetar(tabId, (limitText, safetyText, wasCaptchaOpen) => {
     // 1. Limite diário
     const dangers = [...document.querySelectorAll(".alert-danger, .alert.alert-danger")];
     for (const el of dangers) {
       if (el.textContent.includes(limitText)) return "daily_limit";
+      if (el.textContent.includes(safetyText)) return "safety_limit";
     }
 
     // 2. Sucesso
@@ -375,7 +377,7 @@ async function verificarPagina(tabId, prevCaptchaOpen) {
     if (modal) return "waiting_user";
 
     return "unknown";
-  }, [DAILY_LIMIT_TEXT, prevCaptchaOpen]);
+  }, [DAILY_LIMIT_TEXT, SAFETY_LIMIT_TEXT, prevCaptchaOpen]);
 }
 
 // ─── POLLING ATIVO DO CAPTCHA ─────────────────
@@ -400,6 +402,7 @@ async function aguardarCaptcha(tabId, logPrefix) {
     addLog(`${logPrefix}[${elapsed}s] Estado: ${estado}`, "info");
 
     if (estado === "daily_limit")          return "daily_limit";
+    if (estado === "safety_limit")         return "safety_limit";
     if (estado === "success")              return "success";
     if (estado === "captcha_resolved_token") {
       addLog(`${logPrefix}✅ Captcha resolvido (token detectado). Solver em funcionamento.`, "ok");
@@ -470,9 +473,9 @@ async function processarFaucet(idx, faucet, email) {
 
         // 2. Verificação rápida pós-carregamento (limite diário / sucesso imediato)
         const estadoInicial = await verificarPagina(tabId, false);
-        if (estadoInicial === "daily_limit") {
-          addLog(`${prefix}⏭ Limite diário — pulando faucet`, "skip");
-          updateFaucet(idx, { status: "skip", mensagem: "Limite diário" });
+        if (estadoInicial === "daily_limit" || estadoInicial === "safety_limit") {
+          addLog(`${prefix}⏭ Limite diário/segurança detectado — pulando faucet`, "skip");
+          updateFaucet(idx, { status: "skip", mensagem: "Limite de segurança/diário" });
           return false;
         }
         if (estadoInicial === "success") {
@@ -528,8 +531,11 @@ async function processarFaucet(idx, faucet, email) {
         // 5. POLLING ATIVO — background verifica a página a cada 10s
         const resultado = await aguardarCaptcha(tabId, prefix);
 
-        if (resultado === "parado")     { updateFaucet(idx, { status: "skip", mensagem: "Interrompido" }); return false; }
-        if (resultado === "daily_limit") { updateFaucet(idx, { status: "skip", mensagem: "Limite diário" }); return false; }
+        if (resultado === "parado")      { updateFaucet(idx, { status: "skip", mensagem: "Interrompido" }); return false; }
+        if (resultado === "daily_limit" || resultado === "safety_limit") {
+          updateFaucet(idx, { status: "skip", mensagem: "Limite de segurança/diário" });
+          return false;
+        }
 
         if (resultado === "timeout") {
           addLog(`${prefix}✖ ${runtimeConfig.captchaTimeoutSec}s sem resolução — recarregando...`, "error");
@@ -602,7 +608,10 @@ async function processarFaucet(idx, faucet, email) {
         const final = await verificarPagina(tabId, false);
         addLog(`${prefix}Resultado final: ${final}`, final === "success" ? "ok" : "info");
 
-        if (final === "daily_limit") { updateFaucet(idx, { status: "skip", mensagem: "Limite diário" }); return false; }
+        if (final === "daily_limit" || final === "safety_limit") {
+          updateFaucet(idx, { status: "skip", mensagem: "Limite de segurança/diário" });
+          return false;
+        }
 
         if (final === "success") {
           addLog(`${prefix}✔ Coleta confirmada! Aguardando 55s...`, "ok");
@@ -616,6 +625,10 @@ async function processarFaucet(idx, faucet, email) {
         addLog(`${prefix}Resultado inconclusivo — recheck em 15s...`, "warn");
         await sleep(15000);
         const recheck = await verificarPagina(tabId, false);
+        if (recheck === "daily_limit" || recheck === "safety_limit") {
+          updateFaucet(idx, { status: "skip", mensagem: "Limite de segurança/diário" });
+          return false;
+        }
         if (recheck === "success") {
           addLog(`${prefix}✔ Confirmado no recheck!`, "ok");
           await sleep(55000);
